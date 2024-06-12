@@ -5,20 +5,24 @@
  * Listing 18.11 (p. 271)
  * userController.js에서 인덱스 액션 생성과 index 액션의 재방문
  */
-const User = require("../models/User"); // 사용자 모델 요청
+const passport = require("passport"),
+  User = require("../models/User"); // 사용자 모델 요청
 
 /**
+ * Listing 22.3 (p. 328)
+ * userController.js에서 create액션이 플래시 메시지를 추가
+ *
  * [노트] getUserParams는 이전 캡스톤 프로젝트 (21장)에서 사용돼 왔다. 이 함수는 컨트롤러를 통해
  * 재사용돼 사용자 속성을 하나의 객체로 구성한다. 동일한 함수를 다른 모델 컨트롤러에도 구성해야 한다.
  */
 const getUserParams = (body) => {
   return {
+    username: body.username,
     name: {
       first: body.first,
       last: body.last,
     },
     email: body.email,
-    username: body.username,
     password: body.password,
     profileImg: body.profileImg,
   };
@@ -26,15 +30,42 @@ const getUserParams = (body) => {
 
 module.exports = {
   /**
-   * @TODO: login 액션
-   *
    * Listing 23.3 (p. 336)
    * userController.js로의 로그인과 인증 액션 추가
    */
+  login: (req, res) => {
+    res.render("users/login", {
+      page: "login",
+      title: "Login",
+    });
+  },
 
   /**
-   * @TODO: authenticate 액션
+   * Listing 24.5 (p. 356)
+   * usersController.js에서 passport 인증 미들웨어 추가
+   * 원래 있는 코드는 다 지우고 아래 코드로 대체
    */
+  // local strategy로 사용자를 인증하기 위해 passport 호출
+  authenticate: passport.authenticate("local", {
+    // 성공, 실패의 플래시 메시지를 설정하고 사용자의 인중 상태에 따라 리디렉션할 경로를 지정한다
+    failureRedirect: "/users/login",
+    failureFlash: "Failed to login.",
+    successRedirect: "/",
+    successFlash: "Logged in!",
+  }), // passport의 authenticate 메소드를 사용해 사용자 인증
+
+  /**
+   * Listing 24.8 (p. 359)
+   * usersController.js에서 logout 액션 추가
+   */
+  logout: (req, res, next) => {
+    req.logout(() => {
+      console.log("Logged out!");
+    }); // passport의 logout 메소드를 사용해 사용자 로그아웃
+    req.flash("success", "You have been logged out!"); // 로그아웃 성공 메시지
+    res.locals.redirect = "/"; // 홈페이지로 리디렉션
+    next();
+  },
 
   index: (req, res, next) => {
     User.find() // index 액션에서만 퀴리 실행
@@ -50,6 +81,11 @@ module.exports = {
       });
   },
   indexView: (req, res) => {
+    /*
+     * Listing 26.3 (p. 384)
+     * @TODO: userController.js에서 쿼리 매개변수가 존재할 때 JSON으로 응답하기
+     */
+
     res.render("users/index", {
       page: "users",
       title: "All Users",
@@ -86,36 +122,75 @@ module.exports = {
    * 메시지들을 연결했기 때문에 메시지들은 결국 응답 객체로 연결된다.
    */
   create: (req, res, next) => {
-    let userParams = getUserParams(req.body); // Listing 22.3 (p. 328)
-    // 폼 파라미터로 사용자 생성
-    User.create(userParams)
-      .then((user) => {
+    if (req.skip) next(); // 유효성 체크를 통과하지 못하면 다음 미들웨어 함수로 전달
+
+    let newUser = new User(getUserParams(req.body)); // Listing 22.3 (p. 328)
+
+    /**
+     * Listing 24.4 (p. 355)
+     * usersController.js에서 create 액션에서의 새로운 사용자 등록
+     * 원래 있는 코드는 다 지우고 아래 코드로 대체
+     */
+    User.register(newUser, req.body.password, (error, user) => {
+      // 새로운 사용자 등록
+      if (user) {
+        // 새로운 사용자가 등록되면
         req.flash(
           "success",
           `${user.fullName}'s account created successfully!`
-        ); // Listing 22.3 (p. 328)
-        res.locals.redirect = "/users";
-        res.locals.user = user;
+        ); // 플래시 메시지를 추가하고
+        res.locals.redirect = "/users"; // 사용자 인덱스 페이지로 리디렉션
         next();
-      })
-      .catch((error) => {
-        console.log(`Error saving user: ${error.message}`);
-        res.locals.redirect = "/users/new";
+      } else {
+        // 새로운 사용자가 등록되지 않으면
         req.flash(
           "error",
           `Failed to create user account because: ${error.message}.`
-        ); // Listing 22.3 (p. 328)
-        next(error);
-      });
+        ); // 에러 메시지를 추가하고
+        res.locals.redirect = "/users/new"; // 사용자 생성 페이지로 리디렉션
+        next();
+      }
+    });
   },
 
   /**
-   * @TODO: validate 액션
-   *
    * Listing 23.7 (p. 346)
    * userController.js에서 validate 액션 추가
    */
+  validate: (req, res, next) => {
+    // 사용자가 입력한 이메일 주소가 유효한지 확인
+    req
+      .sanitizeBody("email")
+      .normalizeEmail({
+        all_lowercase: true,
+      })
+      .trim(); // trim()으로 whitespace 제거
+    req.check("email", "Email is invalid").isEmail();
+    // req
+    //   .check("zipCode", "Zip code is invalid")
+    //   .notEmpty()
+    //   .isInt()
+    //   .isLength({
+    //     min: 5,
+    //     max: 5,
+    //   })
+    //   .equals(req.body.zipCode); // zipCode 값의 유효성 체크
+    req.check("password", "Password cannot be empty").notEmpty(); // password 필드 유효성 체크
 
+    // 사용자가 입력한 비밀번호가 일치하는지 확인
+    req.getValidationResult().then((error) => {
+      // 앞에서의 유효성 체크 결과 수집
+      if (!error.isEmpty()) {
+        let messages = error.array().map((e) => e.msg);
+        req.skip = true; // skip 속성을 true로 설정
+        req.flash("error", messages.join(" and ")); // 에러 플래시 메시지로 추가
+        res.locals.redirect = "/users/new"; // new 뷰로 리디렉션 설정
+        next();
+      } else {
+        next(); // 다음 미들웨어 함수 호출
+      }
+    });
+  },
   /**
    * [노트] 폼 데이터를 다시 채우기 위해 다양한 방법을 선택할 수 있다. (연구해보면)
    * 어떤 패키지가 효과적인지 알게 될 것이다. 자신에게 가장 적합한 방법을 찾으면
@@ -184,16 +259,7 @@ module.exports = {
   // update 액션 추가
   update: (req, res, next) => {
     let userId = req.params.id,
-      userParams = {
-        name: {
-          first: req.body.first,
-          last: req.body.last,
-        },
-        email: req.body.email,
-        username: req.body.username,
-        password: req.body.password,
-        profileImg: req.body.profileImg,
-      }; // 요청으로부터 사용자 파라미터 취득
+      userParams = getUserParams(req.body);
 
     User.findByIdAndUpdate(userId, {
       $set: userParams,

@@ -12,7 +12,7 @@ const express = require("express"), // express를 요청
   layouts = require("express-ejs-layouts"), // express-ejs-layout의 요청
   app = express(); // express 애플리케이션의 인스턴스화
 
-// controllers 폴더의 파일을 요청
+// @TODO: Lesson 26: controllers 파일의 요청 삭제
 const pagesController = require("./controllers/pagesController"),
   subscribersController = require("./controllers/subscribersController"),
   usersController = require("./controllers/usersController"),
@@ -25,12 +25,17 @@ const router = express.Router(); // Express 라우터를 인스턴스화
 app.use("/", router); // 라우터를 애플리케이션에 추가
 
 const methodOverride = require("method-override"); // method-override 미들웨어를 요청
-router.use(
+app.use(
   methodOverride("_method", {
     methods: ["POST", "GET"],
   })
 ); // method-override 미들웨어를 사용
 
+/**
+ * =====================================================================
+ * Flash Messages and Session
+ * =====================================================================
+ */
 /**
  * Listing 22.1 (p. 325)
  * app.js에서의 플래시 메시지 요청
@@ -40,8 +45,8 @@ const expressSession = require("express-session"),
   connectFlash = require("connect-flash"),
   expressValidator = require("express-validator"); // Lesson 23 - express-validator 미들웨어를 요청
 
-router.use(cookieParser("secret_passcode")); // cookie-parser 미들웨어를 사용하고 비밀 키를 전달
-router.use(
+app.use(cookieParser("secret_passcode")); // cookie-parser 미들웨어를 사용하고 비밀 키를 전달
+app.use(
   expressSession({
     // express-session 미들웨어를 사용
     secret: "secret_passcode", // 비밀 키를 전달
@@ -52,15 +57,44 @@ router.use(
     saveUninitialized: false, // 초기화되지 않은 세션을 저장하지 않도록 설정
   })
 );
-router.use(connectFlash()); // connect-flash 미들웨어를 사용
+app.use(connectFlash()); // connect-flash 미들웨어를 사용
+
+/**
+ * =====================================================================
+ * Passport Configuration and Middleware
+ * =====================================================================
+ */
+/**
+ * Listing 24.1 (p. 351)
+ * main.js에서 passport의 요청과 초기화
+ */
+const passport = require("passport"); // passport를 요청
+app.use(passport.initialize()); // passport를 초기화
+app.use(passport.session()); // passport가 Express.js 내 세션을 사용하도록 설정
+
+/**
+ * Listing 24.2 (p. 351)
+ * main.js에서 passport 직렬화 설정
+ */
+const User = require("./models/User"); // User 모델을 요청
+passport.use(User.createStrategy()); // User 모델의 인증 전략을 passport에 전달
+passport.serializeUser(User.serializeUser()); // User 모델의 직렬화 메서드를 passport에 전달
+passport.deserializeUser(User.deserializeUser()); // User 모델의 역직렬화 메서드를 passport에 전달
 
 /**
  * Listing 22.2 (p. 327)
  * 응답상에서 connectFlash와 미들웨어와의 연계
  */
-router.use((req, res, next) => {
+app.use((req, res, next) => {
   // 응답 객체상에서 플래시 메시지의 로컬 flashMessages로의 할당
   res.locals.flashMessages = req.flash(); // flash 메시지를 뷰에서 사용할 수 있도록 설정
+
+  /**
+   * Listing 24.7 (p. 358)
+   * 사용자 정의 미들웨어로 로컬 변수 추가
+   */
+  res.locals.loggedIn = req.isAuthenticated(); // 로그인 여부를 확인하는 불리언 값을 로컬 변수에 추가
+  res.locals.currentUser = req.user; // 현재 사용자를 로컬 변수에 추가
   next();
 });
 
@@ -71,17 +105,19 @@ router.use((req, res, next) => {
  */
 
 // 애플리케이션에 Mongoose 설정
-const mongoose = require("mongoose"); // mongoose를 요청
+const mongoose = require("mongoose"), // mongoose를 요청
+  dbName = "aaronkr";
+
 // 데이터베이스 연결 설정
-mongoose.connect( "mongodb+srv://ut-node:TIzqsIk4hXJdnHPT@ut-node.a39enzf.mongodb.net/?retryWrites=true&w=majority&appName=ut-node",{
- 
+mongoose.connect(`mongodb://127.0.0.1:27017/${dbName}`, {
+  useNewUrlParser: true,
 });
 
+// 연결되면 메시지를 보냄
 const db = mongoose.connection;
 db.once("open", () => {
-  console.log("Connected to DB!!!");
+  console.log(`Connected to ${dbName} MongoDB using Mongoose!`);
 });
-
 
 /**
  * =====================================================================
@@ -93,15 +129,19 @@ app.set("port", process.env.PORT || 3000);
 
 // ejs 레이아웃 렌더링
 app.set("view engine", "ejs"); // ejs를 사용하기 위한 애플리케이션 세팅
-router.use(layouts); // layout 모듈 사용을 위한 애플리케이션 세팅
-router.use(express.static("public"));
+app.use(layouts); // layout 모듈 사용을 위한 애플리케이션 세팅
+app.use(express.static("public"));
 
 // body-parser의 추가
-router.use(express.urlencoded({ extended: false }));
-router.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(express.json());
 
 // express-validator의 추가
-router.use(expressValidator());
+app.use(expressValidator());
+
+// @TODO: Lesson 26. 순서가 중요하다. 라우트가 먼저 오면 미들웨어가 먼저 실행된다.
+// 그래서 래이아웃을 먼저 설정하고 라우트를 설정해야 한다.
+app.use("/", router); // 라우터를 애플리케이션에 추가
 
 /**
  * =====================================================================
@@ -112,16 +152,26 @@ router.use(expressValidator());
 /**
  * Pages
  */
+/** @TODO: Home (Pages) 라우트의 homeRoutes.js로의 이동 */
+/**
+ * Pages
+ */
 router.get("/", pagesController.showHome); // 홈 페이지 위한 라우트 추가
 router.get("/about", pagesController.showAbout); // 코스 페이지 위한 라우트 추가
 router.get("/transportation", pagesController.showTransportation); // 교통수단 페이지 위한 라우트 추가
 
+/** @TODO: User 라우트의 userRoutes.js로의 이동 */
+
 /**
- * @TODO: login 라우트 추가
- *
  * Listing 23.2 (p. 335)
  * app.js로 로그인 라우트를 추가
  */
+router.get("/users/login", usersController.login); // 로그인 폼을 보기 위한 요청 처리
+router.post(
+  "/users/login",
+  usersController.authenticate,
+  usersController.redirectView
+); // 로그인 폼에서 받아온 데이터의 처리와 결과를 사용자 보기 페이지에 보여주기
 
 /**
  * Users
@@ -146,6 +196,8 @@ router.delete(
   usersController.delete,
   usersController.redirectView
 );
+
+/** @TODO: Subscriber 라우트의 subscriberRoutes.js로의 이동 */
 
 /**
  * Subscribers
@@ -178,6 +230,8 @@ router.delete(
   subscribersController.redirectView
 );
 
+/** @TODO: Course 라우트의 courseRoutes.js로의 이동 */
+
 /**
  * Courses
  */
@@ -200,6 +254,33 @@ router.delete(
   coursesController.delete,
   coursesController.redirectView
 );
+
+/** @TODO: Train 라우트의 trainRoutes.js로의 이동 */
+
+/**
+ * Trains
+ */
+router.get("/trains", trainsController.index, trainsController.indexView); // index 라우트 생성
+router.get("/trains/new", trainsController.new); // 생성 폼을 보기 위한 요청 처리
+router.post(
+  "/trains/create",
+  trainsController.create,
+  trainsController.redirectView
+); // 생성 폼에서 받아온 데이터의 처리와 결과를 사용자 보기 페이지에 보여주기
+router.get("/trains/:id", trainsController.show, trainsController.showView);
+router.get("/trains/:id/edit", trainsController.edit); // viewing을 처리하기 위한 라우트 추가
+router.put(
+  "/trains/:id/update",
+  trainsController.update,
+  trainsController.redirectView
+); // 편집 폼에서 받아온 데이터의 처리와 결과를 사용자 보기 페이지에 보여주기
+router.delete(
+  "/trains/:id/delete",
+  trainsController.delete,
+  trainsController.redirectView
+);
+
+/** @TODO: Talk 라우트의 talkRoutes.js로의 이동 */
 
 /**
  * Talks
@@ -226,36 +307,15 @@ router.delete(
   talksController.redirectView
 );
 
-/**
- * Trains
- */
-router.get("/trains", trainsController.index, trainsController.indexView); // index 라우트 생성
-router.get("/trains/new", trainsController.new); // 생성 폼을 보기 위한 요청 처리
-router.post(
-  "/trains/create",
-  trainsController.create,
-  trainsController.redirectView
-); // 생성 폼에서 받아온 데이터의 처리와 결과를 사용자 보기 페이지에 보여주기
-router.get("/trains/:id", trainsController.show, trainsController.showView);
-router.get("/trains/:id/edit", trainsController.edit); // viewing을 처리하기 위한 라우트 추가
-router.put(
-  "/trains/:id/update",
-  trainsController.update,
-  trainsController.redirectView
-); // 편집 폼에서 받아온 데이터의 처리와 결과를 사용자 보기 페이지에 보여주기
-router.delete(
-  "/trains/:id/delete",
-  trainsController.delete,
-  trainsController.redirectView
-);
+/** @TODO: Error 라우트의 errorRoutes.js로의 이동 */
+app.use(errorController.resNotFound); // 미들웨어 함수로 에러 처리 추가
+app.use(errorController.resInternalError);
 
 /**
  * =====================================================================
- * Errors Handling & App Startup
+ * App Startup
  * =====================================================================
  */
-app.use(errorController.resNotFound); // 미들웨어 함수로 에러 처리 추가
-app.use(errorController.resInternalError);
 
 app.listen(app.get("port"), () => {
   // 3000번 포트로 리스닝 설정
